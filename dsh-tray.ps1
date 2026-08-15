@@ -12,7 +12,7 @@
 #   dsh-tray.lnk (Startup) -> wscript dsh-tray-launch.vbs
 #     -> powershell -WindowStyle Hidden -> this script
 #       -> Start-Process cmd.exe /c dsh-win-start.cmd
-#            -> dsh web --port <port>   (DSH_HOME=C:\Users\catti\.dsh; default 3080)
+#            -> dsh web --port <port>   (DSH_HOME=%USERPROFILE%\.dsh; default 3080)
 #
 # Watchdog policy (since 1.1.0):
 #   - the tray manages the *lifecycle*, not liveness:
