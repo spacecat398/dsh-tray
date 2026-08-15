@@ -1,0 +1,10 @@
+# runtime artifacts
+logs/
+*.log
+
+# local configuration (per-machine paths) - use dsh-tray.example.json as a template
+dsh-tray.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db

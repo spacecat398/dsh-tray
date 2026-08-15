@@ -1,0 +1,11 @@
+{
+  "port": 3090,
+  "startscript": "C:\\path\\to\\dsh-tray\\start-dsh.cmd",
+  "dshlogfile": "C:\\path\\to\\dsh-tray\\logs\\dsh-web.log",
+  "healthintervalseconds": 10,
+  "startupgraceseconds": 120,
+  "restartdelayseconds": 5,
+  "language": "auto",
+  "notifications": true,
+  "whaleicon": true
+}
