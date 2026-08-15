@@ -1,7 +1,7 @@
 ﻿# =============================================================================
 # dsh-tray.ps1 - DeepSeek Harness (dsh web) Windows-native tray controller
 #
-# Version: 1.1.0
+# Version: 1.1.1
 #
 # The tray is the switch + watchdog for the Windows-native dsh web instance
 # (default port 3090). It starts / restarts / stops dsh, watches health, and
@@ -26,7 +26,7 @@
 # tray process (taskkill /PID <tray-pid> /F).
 # =============================================================================
 
-$script:Version = "1.1.0"
+$script:Version = "1.1.1"
 
 $ErrorActionPreference = "Stop"
 
@@ -264,6 +264,7 @@ function Init-I18n {
             BalloonUnhealthy    = "dsh 异常"
             BalloonCopied       = "日志已复制"
             BalloonNewChat      = "新对话已就绪"
+            BalloonNewChatHint = "已创建新对话，点击会话列表顶部的空白会话即可打开"
             BalloonError        = "出错"
         }
         en = @{
@@ -288,6 +289,7 @@ function Init-I18n {
             BalloonUnhealthy    = "dsh unhealthy"
             BalloonCopied       = "log copied"
             BalloonNewChat      = "new conversation ready"
+            BalloonNewChatHint = "New conversation created - click it at the top of the list"
             BalloonError        = "error"
         }
     }
@@ -459,13 +461,41 @@ function Invoke-MonitorTick {
 
 # --- tray actions --------------------------------------------------------------
 function Start-NewConversation {
-    # Create a fresh session through the harness RPC API, then open the dashboard.
+    # Create a fresh session INSIDE the current workspace (so the GUI lists it),
+    # then open the dashboard in a NEW tab. Note: the GUI remembers its current
+    # conversation in browser localStorage ("dsh.sessions.current"), so a fresh
+    # tab resumes the old conversation; the new session shows at the TOP of the
+    # conversation list - one click opens it.
+    $workspaceId = $null
+    $wsRpcId = "tray-ws-" + ([guid]::NewGuid().ToString("N").Substring(0, 12))
+    $wsBody = @{
+        type    = "client-request"
+        rpcId   = $wsRpcId
+        method  = "workspace.list"
+        payload = @{}
+    } | ConvertTo-Json -Compress
+
+    try {
+        $wsResp = Invoke-RestMethod -Uri "http://127.0.0.1:$($script:Port)/api/workspace.list" `
+            -Method Post -ContentType "application/json" -Body $wsBody -TimeoutSec 10
+        if ($wsResp.result.ok -and $wsResp.result.value.items -and $wsResp.result.value.items.Count -gt 0) {
+            $workspaceId = [string]$wsResp.result.value.items[0].workspaceId
+        }
+    }
+    catch {
+        Write-TrayLog "WARN workspace.list: $($_.Exception.Message)"
+    }
+
+    $payload = @{}
+    if ($workspaceId) {
+        $payload.workspaceId = $workspaceId
+    }
     $rpcId = "tray-" + ([guid]::NewGuid().ToString("N").Substring(0, 12))
     $body = @{
         type    = "client-request"
         rpcId   = $rpcId
         method  = "session.create"
-        payload = @{}
+        payload = $payload
     } | ConvertTo-Json -Compress
 
     try {
@@ -473,9 +503,11 @@ function Start-NewConversation {
             -Method Post -ContentType "application/json" -Body $body -TimeoutSec 10
         if ($resp.result.ok) {
             $sessionId = $resp.result.value.sessionId
-            Write-TrayLog "New conversation created: $sessionId"
-            Start-Process $script:DashboardUrl
-            Show-Balloon -Title $script:L.BalloonNewChat -Text $sessionId
+            Write-TrayLog "New conversation created: $sessionId workspace=$workspaceId"
+            # Unique fragment forces the browser to open a NEW tab.
+            $openUrl = $script:DashboardUrl.TrimEnd("/") + "#tray-new-" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+            Start-Process $openUrl
+            Show-Balloon -Title $script:L.BalloonNewChat -Text $script:L.BalloonNewChatHint
         }
         else {
             Write-TrayLog "WARN session.create rejected: $($resp.result.error | ConvertTo-Json -Compress)"

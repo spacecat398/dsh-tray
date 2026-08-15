@@ -24,7 +24,7 @@ dsh-tray.lnk (开机自启)
 | 💬 通知气泡 | 状态跳变（启动/停止/恢复/异常/自动重启）时通知，不刷屏 |
 | 🛡️ 看门狗 | **只管生命周期、不管快慢**：进程活着绝不杀；进程消失才重启，带退避 |
 | 🎯 停止安全 | 杀进程前校验身份（node/bun + 命令行含 dsh），不误杀占用端口的外来进程 |
-| 🆕 开启新对话 | 经 harness RPC（`POST /api/session.create`）建新会话并打开面板 |
+| 🆕 开启新对话 | 经 harness RPC（`POST /api/session.create`）在**当前工作区**建新会话并打开浏览器新标签页。GUI 的"当前会话"存在浏览器 localStorage（`dsh.sessions.current`），因此新标签页会恢复旧会话 —— 新对话出现在**会话列表顶部**，点一下即开 |
 | 📋 复制日志 | 一键把最近 25 行 dsh 日志复制到剪贴板 |
 | 🔄 防双开 | Mutex `Local\DshTray-<port>` |
 | ⚙️ 配置文件 | 所有参数在 `dsh-tray.json`，无需改脚本 |
