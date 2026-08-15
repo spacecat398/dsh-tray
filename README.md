@@ -82,6 +82,16 @@ assets\dsh-whale.png    # 鲸鱼托盘图标
 
 > ⚠️ `dsh-tray.ps1` 含中文字符串，必须保存为 **UTF-8 with BOM**（PS 5.1 无 BOM 会按 ANSI 解码导致语法错误）。
 
+## 📜 版本历史
+
+| 版本 | 内容 |
+|---|---|
+| **v1.2.0** | 🔥 **开启新对话真正生效**：用 UI Automation 驱动 GUI 自己的"新建会话"流程（点按钮→选新条目），创建/切换/持久化全由 GUI 处理，彻底绕开浏览器 localStorage 限制；GUI 不可用时回退 RPC + 新标签页 |
+| **v1.1.1** | 修复"开启新对话"不可见：新会话挂到当前工作区（`workspace.list` → `session.create`），面板用唯一 fragment 强制新标签页 |
+| **v1.1.0** | 正式发布版：配置文件 `dsh-tray.json`、中英双语菜单、新菜单（新对话/复制日志/自启开关，无 Exit）、通知气泡、看门狗强化（不杀慢启动 + 崩溃退避重启 + 杀前身份校验） |
+
+> 注：dsh web 默认端口为 **3090**（`dsh --profile web --dump-config` 确认 `port ?? 3090`），仓库默认值即默认端口。
+
 ## 📄 License
 
 [MIT](./LICENSE)
