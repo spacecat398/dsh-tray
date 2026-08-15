@@ -24,7 +24,7 @@ dsh-tray.lnk (开机自启)
 | 💬 通知气泡 | 状态跳变（启动/停止/恢复/异常/自动重启）时通知，不刷屏 |
 | 🛡️ 看门狗 | **只管生命周期、不管快慢**：进程活着绝不杀；进程消失才重启，带退避 |
 | 🎯 停止安全 | 杀进程前校验身份（node/bun + 命令行含 dsh），不误杀占用端口的外来进程 |
-| 🆕 开启新对话 | 经 harness RPC（`POST /api/session.create`）在**当前工作区**建新会话并打开浏览器新标签页。GUI 的"当前会话"存在浏览器 localStorage（`dsh.sessions.current`），因此新标签页会恢复旧会话 —— 新对话出现在**会话列表顶部**，点一下即开 |
+| 🆕 开启新对话 | **真正打开一个新的空对话**：通过 UI Automation 驱动 GUI 自己的"新建会话"流程（点按钮→选新条目），创建/切换/持久化全由 GUI 处理；GUI 不可用时回退为 RPC 建会话 + 新标签页 |
 | 📋 复制日志 | 一键把最近 25 行 dsh 日志复制到剪贴板 |
 | 🔄 防双开 | Mutex `Local\DshTray-<port>` |
 | ⚙️ 配置文件 | 所有参数在 `dsh-tray.json`，无需改脚本 |
@@ -96,7 +96,7 @@ assets\dsh-whale.png    # 鲸鱼托盘图标
 - UI language follows the OS (zh / en), overridable via `language` in `dsh-tray.json`
 - Watchdog manages *lifecycle, not liveness*: a live-but-slow process is never killed; only a crash schedules a restart (5s → 30s backoff)
 - Stop verifies process identity before `taskkill` (node/bun + command line referencing dsh)
-- New Conversation creates a session through the harness RPC (`POST /api/session.create`) and opens the dashboard
+- New Conversation drives the GUI's own "new conversation" flow via UI Automation (click the sidebar button, select the new entry) — the GUI handles creation, selection and its localStorage state, so a fresh empty conversation truly opens. Falls back to the RPC + new-tab flow when the GUI is not reachable.
 - Config: copy `dsh-tray.example.json` → `dsh-tray.json` and edit paths
 
 Requires `dsh` installed globally (`npm i -g @deepseek-ai/dsh`). Run on Windows PowerShell 5.1+.

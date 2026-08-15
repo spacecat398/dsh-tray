@@ -1,7 +1,7 @@
 ﻿# =============================================================================
 # dsh-tray.ps1 - DeepSeek Harness (dsh web) Windows-native tray controller
 #
-# Version: 1.1.1
+# Version: 1.2.0
 #
 # The tray is the switch + watchdog for the Windows-native dsh web instance
 # (default port 3090). It starts / restarts / stops dsh, watches health, and
@@ -26,7 +26,7 @@
 # tray process (taskkill /PID <tray-pid> /F).
 # =============================================================================
 
-$script:Version = "1.1.1"
+$script:Version = "1.2.0"
 
 $ErrorActionPreference = "Stop"
 
@@ -53,6 +53,7 @@ $script:WhaleIcon        = $null    # DeepSeek whale icon (assets\dsh-whale.png)
 $script:LastState        = $null    # last status state, for transition balloons
 $script:SawUnhealthy     = $false   # have we ever observed an unhealthy state?
 $script:SuppressAutostartEvents = $false   # guard: setting Checked at build time must not toggle the lnk
+$script:MouseTypeDefined = $false   # Add-Type guard for the P/Invoke mouse helper
 $script:Config           = $null
 $script:Port             = 3090
 $script:HealthUrl        = $null
@@ -264,7 +265,7 @@ function Init-I18n {
             BalloonUnhealthy    = "dsh 异常"
             BalloonCopied       = "日志已复制"
             BalloonNewChat      = "新对话已就绪"
-            BalloonNewChatHint = "已创建新对话，点击会话列表顶部的空白会话即可打开"
+            BalloonNewChatHint = "新对话已开启"
             BalloonError        = "出错"
         }
         en = @{
@@ -289,7 +290,7 @@ function Init-I18n {
             BalloonUnhealthy    = "dsh unhealthy"
             BalloonCopied       = "log copied"
             BalloonNewChat      = "new conversation ready"
-            BalloonNewChatHint = "New conversation created - click it at the top of the list"
+            BalloonNewChatHint = "new conversation opened"
             BalloonError        = "error"
         }
     }
@@ -460,12 +461,156 @@ function Invoke-MonitorTick {
 }
 
 # --- tray actions --------------------------------------------------------------
+function Invoke-MouseClick {
+    param([int]$X, [int]$Y)
+    if (-not $script:MouseTypeDefined) {
+        Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public static class DshTrayMouse{ [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y); [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint dx,uint dy,uint d,UIntPtr e); public static void Click(int x,int y){ SetCursorPos(x,y); System.Threading.Thread.Sleep(100); mouse_event(0x0002,0,0,0,UIntPtr.Zero); mouse_event(0x0004,0,0,0,UIntPtr.Zero);} }' -ErrorAction SilentlyContinue
+        $script:MouseTypeDefined = $true
+    }
+    [DshTrayMouse]::Click($X, $Y)
+    return $true
+}
+
+function Invoke-UiaElementActivate {
+    # Activate a UI element: semantic patterns first (no cursor movement),
+    # a real mouse click at the element center only as a last resort.
+    param($Element)
+    try {
+        $p = $Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+        $p.Invoke()
+        return $true
+    }
+    catch {
+    }
+    try {
+        $p = $Element.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+        $p.Select()
+        return $true
+    }
+    catch {
+    }
+    $r = $Element.Current.BoundingRectangle
+    if ($r.Width -gt 0 -and $r.Height -gt 0) {
+        return (Invoke-MouseClick -X ([int]($r.X + $r.Width / 2)) -Y ([int]($r.Y + $r.Height / 2)))
+    }
+    return $false
+}
+
+function Invoke-GuiNewConversation {
+    # Drive the harness GUI's own "new conversation" flow through UI Automation.
+    # The GUI owns session creation, view switching and its localStorage
+    # persistence - no RPC hacks needed.
+    #
+    # Deterministic logic (the GUI button alone proved flaky):
+    #   1. An untitled entry already selected  -> GUI is on a fresh conversation
+    #   2. An untitled entry exists            -> select it
+    #   3. None exists -> click "New conversation", wait for the new entry,
+    #      then select it (InvokePattern first; real click after focusing the
+    #      window as a fallback).
+    Add-Type -AssemblyName UIAutomationClient
+    Add-Type -AssemblyName UIAutomationTypes
+
+    $root = [System.Windows.Automation.AutomationElement]::RootElement
+    $win = $null
+    foreach ($w in $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)) {
+        if ($w.Current.ClassName -eq 'Chrome_WidgetWin_1' -and $w.Current.Name -match 'DeepSeek Harness') {
+            $win = $w
+            break
+        }
+    }
+    if (-not $win) {
+        return $false
+    }
+
+    $itemCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::TreeItem)
+    function Get-UntitledItems {
+        $found = @()
+        foreach ($t in $win.FindAll([System.Windows.Automation.TreeScope]::Descendants, $itemCond)) {
+            if ($t.Current.Name -match '新会话|^New (session|conversation)') {
+                $found += $t
+            }
+        }
+        return $found
+    }
+
+    $untitled = @(Get-UntitledItems)
+
+    # Case 1 + 2: reuse an existing empty conversation if possible.
+    foreach ($t in $untitled) {
+        try {
+            $p = $t.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+            if ($p.Current.IsSelected) {
+                try { $win.SetFocus() } catch { }
+                return $true
+            }
+        }
+        catch {
+        }
+    }
+    if ($untitled.Count -gt 0) {
+        if (Invoke-UiaElementActivate $untitled[0]) {
+            try { $win.SetFocus() } catch { }
+            return $true
+        }
+    }
+
+    # Case 3: create a new empty conversation via the GUI button.
+    $btnCond = New-Object System.Windows.Automation.AndCondition(
+        (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)),
+        (New-Object System.Windows.Automation.OrCondition(
+            (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '新建会话')),
+            (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'New conversation')))))
+    $btn = $win.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $btnCond)
+    if (-not $btn) {
+        return $false
+    }
+
+    $beforeCount = $untitled.Count
+    $clicked = Invoke-UiaElementActivate $btn
+    if (-not $clicked) {
+        return $false
+    }
+
+    $item = $null
+    for ($attempt = 0; $attempt -lt 2 -and -not $item; $attempt++) {
+        for ($i = 0; $i -lt 10 -and -not $item; $i++) {
+            Start-Sleep -Milliseconds 400
+            $now = @(Get-UntitledItems)
+            if ($now.Count -gt $beforeCount) {
+                $item = $now[$now.Count - 1]
+            }
+        }
+        if (-not $item -and $attempt -eq 0) {
+            # InvokePattern sometimes does not register; retry with a real click
+            # after focusing the window so coordinates are safe.
+            try { $win.SetFocus() } catch { }
+            $r = $btn.Current.BoundingRectangle
+            if ($r.Width -gt 0 -and $r.Height -gt 0) {
+                [void](Invoke-MouseClick -X ([int]($r.X + $r.Width / 2)) -Y ([int]($r.Y + $r.Height / 2)))
+            }
+        }
+    }
+    if (-not $item) {
+        return $false
+    }
+    if (Invoke-UiaElementActivate $item) {
+        try { $win.SetFocus() } catch { }
+        return $true
+    }
+    return $false
+}
+
 function Start-NewConversation {
-    # Create a fresh session INSIDE the current workspace (so the GUI lists it),
-    # then open the dashboard in a NEW tab. Note: the GUI remembers its current
-    # conversation in browser localStorage ("dsh.sessions.current"), so a fresh
-    # tab resumes the old conversation; the new session shows at the TOP of the
-    # conversation list - one click opens it.
+    # Preferred: drive the GUI's own "new conversation" flow (creation +
+    # selection + localStorage all handled by the GUI itself). Fallback:
+    # create a session through the harness RPC and open a new browser tab.
+    if (Invoke-GuiNewConversation) {
+        Write-TrayLog "New conversation opened via GUI"
+        Show-Balloon -Title $script:L.BalloonNewChat -Text $script:L.BalloonNewChatHint
+        return
+    }
+    Write-TrayLog "WARN GUI automation unavailable; falling back to RPC + browser tab"
+
     $workspaceId = $null
     $wsRpcId = "tray-ws-" + ([guid]::NewGuid().ToString("N").Substring(0, 12))
     $wsBody = @{
