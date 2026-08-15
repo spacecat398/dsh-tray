@@ -1,10 +1,10 @@
 ﻿# =============================================================================
 # dsh-tray.ps1 - DeepSeek Harness (dsh web) Windows-native tray controller
 #
-# Version: 1.2.0
+# Version: 1.3.0
 #
 # The tray is the switch + watchdog for the Windows-native dsh web instance
-# (default port 3090). It starts / restarts / stops dsh, watches health, and
+# (default port 3080). It starts / restarts / stops dsh, watches health, and
 # auto-recovers crashes. All knobs live in dsh-tray.json next to this script.
 # Menu text follows the system UI language (zh / en); override in config.
 #
@@ -12,7 +12,7 @@
 #   dsh-tray.lnk (Startup) -> wscript dsh-tray-launch.vbs
 #     -> powershell -WindowStyle Hidden -> this script
 #       -> Start-Process cmd.exe /c dsh-win-start.cmd
-#            -> dsh web --port 3090   (DSH_HOME=C:\Users\catti\.dsh)
+#            -> dsh web --port <port>   (DSH_HOME=C:\Users\catti\.dsh; default 3080)
 #
 # Watchdog policy (since 1.1.0):
 #   - the tray manages the *lifecycle*, not liveness:
@@ -26,7 +26,7 @@
 # tray process (taskkill /PID <tray-pid> /F).
 # =============================================================================
 
-$script:Version = "1.2.0"
+$script:Version = "1.3.0"
 
 $ErrorActionPreference = "Stop"
 
@@ -55,7 +55,7 @@ $script:SawUnhealthy     = $false   # have we ever observed an unhealthy state?
 $script:SuppressAutostartEvents = $false   # guard: setting Checked at build time must not toggle the lnk
 $script:MouseTypeDefined = $false   # Add-Type guard for the P/Invoke mouse helper
 $script:Config           = $null
-$script:Port             = 3090
+$script:Port             = 3080
 $script:HealthUrl        = $null
 $script:DashboardUrl     = $null
 $script:StartScript      = $null
@@ -191,8 +191,12 @@ function Test-DshProcessIdentity {
 function Read-Config {
     $cfg = @{}
     # Defaults are generic; a dsh-tray.json next to the script overrides them.
+    # 3080 is dsh web's out-of-the-box default port (official README + the
+    # web-app bundle's own patch). The author's machine overrides to 3090 via
+    # its profile patch (~/.dsh/profiles/web/cordis.patch.yml) to coexist with
+    # the WSL instance - that stays in the local dsh-tray.json.
     $defaults = @{
-        port                 = 3090
+        port                 = 3080
         startscript          = (Join-Path $script:TrayRoot "start-dsh.cmd")
         dshlogfile           = (Join-Path $script:TrayRoot "logs\dsh-web.log")
         healthintervalseconds = 10

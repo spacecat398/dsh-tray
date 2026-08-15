@@ -8,7 +8,7 @@ REM DSH_HOME or extra flags.
 REM ===========================================================================
 setlocal
 set "PORT=%~1"
-if "%PORT%"=="" set "PORT=3090"
+if "%PORT%"=="" set "PORT=3080"
 
 if "%DSH_HOME%"=="" set "DSH_HOME=%USERPROFILE%\.dsh"
 set "DSH_WEB_LOG=%~dp0logs\dsh-web.log"

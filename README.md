@@ -20,7 +20,7 @@
 
 ### 1. Objective
 
-在一台 Windows 机器上把 dsh-tray 部署为常驻托盘程序：开机自启、托盘控制 dsh web（默认端口 3090）、崩溃自动拉起。优先最小可用配置，不要引入额外依赖。
+在一台 Windows 机器上把 dsh-tray 部署为常驻托盘程序：开机自启、托盘控制 dsh web（默认端口 3080）、崩溃自动拉起。优先最小可用配置，不要引入额外依赖。
 
 ### 2. Requirements
 
@@ -46,7 +46,7 @@ wscript //nologo dsh-tray-launch.vbs
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `port` | `3090` | dsh web 端口。**3090 就是 dsh 的默认端口**（`dsh --profile web --dump-config` 确认），healthurl/dashboardurl 由它派生 |
+| `port` | `3080` | dsh web 端口。**3080 是 dsh 的开箱默认端口**（官方 README 与 web-app 包内补丁均为 `?? 3080`）；healthurl/dashboardurl 由它派生 |
 | `startscript` | `start-dsh.cmd` | 启动脚本；托盘以 `<port>` 作为 %1 调用它 |
 | `dshlogfile` | `logs\dsh-web.log` | "复制最近日志"菜单读取的文件 |
 | `healthintervalseconds` | `10` | 健康检查间隔（秒） |
@@ -66,7 +66,7 @@ wscript //nologo dsh-tray-launch.vbs
    Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '-File.*dsh-tray\.ps1' }
    ```
 3. 托盘菜单完整：状态行 / 打开面板 / 开启新对话 / 重启 dsh / 停止 dsh / 复制最近日志 / 开机自启（**没有 Exit 菜单项，这是设计**）
-4. dsh web 健康：菜单状态行显示 `Healthy (:3090)`，且 `Get-NetTCPConnection -LocalPort 3090 -State Listen` 有监听
+4. dsh web 健康：菜单状态行显示 `Healthy (:<port>)`，且 `Get-NetTCPConnection -LocalPort <port> -State Listen` 有监听（默认 3080）
 5. 托盘日志 `logs\dsh-tray.log` 有 `Tray application starting ... v1.x.x` 记录，无 FATAL
 6. 开机自启已按用户意愿设置（托盘菜单勾选，或 `powershell -File install-autostart.ps1`）
 
@@ -75,7 +75,7 @@ wscript //nologo dsh-tray-launch.vbs
 - 不要提交或暴露 `dsh-tray.json`（含本机路径）、`logs/`、任何 `*.log`（仓库 `.gitignore` 已排除，保持即可）
 - `dsh-tray.ps1` 含中文，**必须 UTF-8 with BOM**；编辑后务必重新确认 BOM 存在
 - 停止 dsh 时托盘会先校验进程身份（node/bun + 命令行含 dsh）再 `taskkill`，**不要绕过该校验去杀任意进程**
-- 不要改端口到非 3090，除非用户明确要求（两个 URL 都由 port 派生，改端口即可，别手改 URL）
+- 不要随意改端口，除非用户明确要求（两个 URL 都由 port 派生，改 `port` 即可，别手改 URL）
 - 不要把托盘提升为管理员 / 服务运行 —— 它是普通用户级常驻程序
 - 本机安全注意：若系统防火墙 Private 配置文件被关闭，其他 0.0.0.0 监听服务可能对局域网可见（与托盘无关，但值得提醒用户）
 
@@ -123,6 +123,7 @@ logs\dsh-tray.log       # 托盘自身日志（运行时生成，不入库）
 
 | 版本 | 内容 |
 |---|---|
+| **v1.3.0** | 🔧 **默认端口修正为 3080**：此前默认 3090 实为作者本机 profile 覆盖（为与 WSL 实例共存），dsh 开箱默认是 3080（官方 README + 包内补丁确认）；本地配置显式写端口则不受影响 |
 | **v1.2.0** | 🔥 **开启新对话真正生效**：UI Automation 驱动 GUI 自身流程，彻底绕开浏览器 localStorage 限制；GUI 不可用时回退 RPC + 新标签页 |
 | **v1.1.1** | 修复新对话不可见：会话挂到当前工作区 + 唯一 fragment 强制新标签页 |
 | **v1.1.0** | 正式发布版：配置文件、中英双语、新菜单、通知气泡、看门狗强化 |
@@ -140,5 +141,5 @@ logs\dsh-tray.log       # 托盘自身日志（运行时生成，不入库）
 - Menu: status / Open Dashboard / **New Conversation** / Restart / Stop / Copy Recent Log / Start with Windows (no Exit by design)
 - New Conversation drives the GUI's own flow via UI Automation — a fresh empty conversation truly opens
 - Watchdog manages lifecycle, not liveness: a live-but-slow process is never killed; crashes restart with 5s → 30s backoff; Stop verifies process identity before taskkill
-- Config: copy `dsh-tray.example.json` → `dsh-tray.json`; default port **3090** (dsh's default)
+- Config: copy `dsh-tray.example.json` → `dsh-tray.json`; default port **3080** (dsh's out-of-the-box default)
 - Requires `npm i -g @deepseek-ai/dsh`; Windows PowerShell 5.1+; UTF-8 **with BOM** for `dsh-tray.ps1`
